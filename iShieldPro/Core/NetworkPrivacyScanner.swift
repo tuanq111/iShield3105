@@ -1,6 +1,6 @@
 //
 //  NetworkPrivacyScanner.swift
-//  iShield3105
+//  iShieldPro
 //
 //  Low-level BSD Interface (<ifaddrs.h>), DNS Resolver (<resolv.h>), Hidden Tunnel & IP Exposure Scanner
 //
@@ -47,6 +47,12 @@ final class NetworkPrivacyScanner: ObservableObject {
         "2620:fe::9": "Quad9 IPv6",
         "94.140.14.14": "AdGuard DNS",
         "94.140.15.15": "AdGuard DNS",
+        "2a10:50c0::ad1:ff": "AdGuard IPv6",
+        "2a10:50c0::ad2:ff": "AdGuard IPv6",
+        "76.76.2.2": "Control D Privacy DNS",
+        "76.76.10.2": "Control D Privacy DNS",
+        "2606:1a40::2": "Control D IPv6",
+        "2606:1a40:1::2": "Control D IPv6",
         "208.67.222.222": "OpenDNS / Cisco",
         "208.67.220.220": "OpenDNS / Cisco"
     ]
@@ -245,7 +251,7 @@ final class NetworkPrivacyScanner: ObservableObject {
     nonisolated private static func probeNWPathSnapshot() async -> (Bool, String) {
         await withCheckedContinuation { continuation in
             let monitor = NWPathMonitor()
-            let queue = DispatchQueue(label: "com.ishield3105.nwpath")
+            let queue = DispatchQueue(label: "com.ishield.pro.nwpath")
             let gate = NWPathContinuationGate()
 
             monitor.pathUpdateHandler = { path in
@@ -363,7 +369,7 @@ final class NetworkPrivacyScanner: ObservableObject {
         if let ipInfoURL = URL(string: "https://ipinfo.io/json") {
             var req = URLRequest(url: ipInfoURL)
             req.setValue("application/json", forHTTPHeaderField: "Accept")
-            req.setValue("iShield3105/1.0", forHTTPHeaderField: "User-Agent")
+            req.setValue("iShieldPro/2.0", forHTTPHeaderField: "User-Agent")
 
             if let (data, response) = try? await session.data(for: req),
                let httpResp = response as? HTTPURLResponse,

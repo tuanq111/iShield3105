@@ -1,6 +1,6 @@
 //
 //  ContainerBridge.m
-//  iShield3105
+//  iShieldPro
 //
 //  Dynamic Private Framework Loader (dlopen / dlsym / NSClassFromString) & Low-Level C Inspectors
 //
@@ -14,6 +14,9 @@
 #import <arpa/inet.h>
 #import <netdb.h>
 #import <resolv.h>
+#import <ifaddrs.h>
+#import <net/if.h>
+#import <mach/mach.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
 #import <sys/sysctl.h>
@@ -21,6 +24,9 @@
 #import <poll.h>
 #import <unistd.h>
 #import <errno.h>
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wundeclared-selector"
 
 typedef CFArrayRef _Nullable (*SBSAppIdsFn)(bool onlyActive, bool debuggable);
 typedef CFSetRef _Nullable (*SBSSetIdsFn)(void);
@@ -83,6 +89,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
                      displayName:(NSString *)displayName
                  applicationType:(NSString *)appType
                     shortVersion:(nullable NSString *)shortVersion
+                       bundleURL:(nullable NSURL *)bundleURL
                 dataContainerURL:(nullable NSURL *)dataURL
               groupContainerURLs:(NSDictionary<NSString *, NSURL *> *)groupURLs
                pluginIdentifiers:(NSArray<NSString *> *)plugins
@@ -93,6 +100,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
         _displayName = [displayName copy];
         _applicationType = [appType copy];
         _shortVersion = [shortVersion copy];
+        _bundleURL = bundleURL;
         _dataContainerURL = dataURL;
         _groupContainerURLs = [groupURLs copy];
         _pluginIdentifiers = [plugins copy];
@@ -127,6 +135,44 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
         _imagePath = [path copy];
         _imageName = [name copy];
         _architecture = [architecture copy];
+    }
+    return self;
+}
+@end
+
+@implementation ISInterfaceTrafficSample
+- (instancetype)initWithName:(NSString *)name
+                        isUp:(BOOL)isUp
+                   isRunning:(BOOL)isRunning
+               receivedBytes:(uint64_t)rxBytes
+                   sentBytes:(uint64_t)txBytes
+             receivedPackets:(uint64_t)rxPackets
+                 sentPackets:(uint64_t)txPackets {
+    self = [super init];
+    if (self) {
+        _interfaceName = [name copy];
+        _isUp = isUp;
+        _isRunning = isRunning;
+        _receivedBytes = rxBytes;
+        _sentBytes = txBytes;
+        _receivedPackets = rxPackets;
+        _sentPackets = txPackets;
+    }
+    return self;
+}
+@end
+
+@implementation ISProcessTelemetrySnapshot
+- (instancetype)initWithResidentMemory:(uint64_t)residentBytes
+                         virtualMemory:(uint64_t)virtualBytes
+                     activeThreadCount:(NSUInteger)threadCount
+                      debuggerAttached:(BOOL)debuggerAttached {
+    self = [super init];
+    if (self) {
+        _residentMemoryBytes = residentBytes;
+        _virtualMemoryBytes = virtualBytes;
+        _activeThreadCount = threadCount;
+        _debuggerAttached = debuggerAttached;
     }
     return self;
 }
@@ -453,6 +499,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
             NSString *shortVersion = [self safeStringFromObject:proxy selector:@selector(shortVersionString)];
             NSString *signer = [self safeStringFromObject:proxy selector:@selector(signerIdentity)];
 
+            NSURL *bundleURL = [self safeURLFromObject:proxy selector:@selector(bundleURL)];
             NSURL *dataURL = [self safeURLFromObject:proxy selector:@selector(dataContainerURL)];
             if (dataURL == nil) {
                 ISContainerDescriptor *resolved = [self resolveAppDataContainerForBundleIdentifier:bundleID];
@@ -491,6 +538,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
                                                                                     displayName:displayName
                                                                                 applicationType:appType
                                                                                    shortVersion:shortVersion
+                                                                                      bundleURL:bundleURL
                                                                                dataContainerURL:dataURL
                                                                              groupContainerURLs:groupURLs
                                                                               pluginIdentifiers:pluginIDs
@@ -549,6 +597,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
                                                                                     displayName:name
                                                                                 applicationType:appType
                                                                                    shortVersion:nil
+                                                                                      bundleURL:nil
                                                                                dataContainerURL:resolved.url
                                                                              groupContainerURLs:@{}
                                                                               pluginIdentifiers:@[]
@@ -573,6 +622,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
                                                                                         displayName:bundleID
                                                                                     applicationType:appType
                                                                                        shortVersion:nil
+                                                                                          bundleURL:nil
                                                                                    dataContainerURL:url
                                                                                  groupContainerURLs:@{}
                                                                                   pluginIdentifiers:@[]
@@ -587,9 +637,10 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
     if (byBundleID[selfBundleID] == nil) {
         NSURL *selfHome = [NSURL fileURLWithPath:NSHomeDirectory() isDirectory:YES];
         ISInstalledAppDescriptor *selfDesc = [[ISInstalledAppDescriptor alloc] initWithBundleID:selfBundleID
-                                                                                    displayName:@"iShield3105 (Self)"
+                                                                                    displayName:@"iShield Pro (Self)"
                                                                                 applicationType:@"User"
                                                                                    shortVersion:[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"]
+                                                                                      bundleURL:[[NSBundle mainBundle] bundleURL]
                                                                                dataContainerURL:selfHome
                                                                              groupContainerURLs:@{}
                                                                               pluginIdentifiers:@[]
@@ -618,6 +669,7 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
                                                                                            displayName:probeID
                                                                                        applicationType:@"System"
                                                                                           shortVersion:nil
+                                                                                             bundleURL:nil
                                                                                       dataContainerURL:probeDesc.url
                                                                                     groupContainerURLs:@{}
                                                                                      pluginIdentifiers:@[]
@@ -822,4 +874,77 @@ typedef CFStringRef _Nullable (*SBSLocalizedAppNameFn)(CFStringRef displayIdenti
     return isOpen;
 }
 
+#pragma mark - Kernel Network Traffic Counters & Mach Telemetry
+
+- (NSArray<ISInterfaceTrafficSample *> *)fetchNetworkTrafficSamples {
+    NSMutableArray<ISInterfaceTrafficSample *> *samples = [NSMutableArray array];
+    struct ifaddrs *ifaddr = NULL;
+    if (getifaddrs(&ifaddr) != 0 || ifaddr == NULL) {
+        return samples;
+    }
+
+    for (struct ifaddrs *ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_name == NULL || ifa->ifa_addr == NULL || ifa->ifa_data == NULL) {
+            continue;
+        }
+        if (ifa->ifa_addr->sa_family != AF_LINK) {
+            continue;
+        }
+        NSString *name = [NSString stringWithUTF8String:ifa->ifa_name];
+        if (name.length == 0) {
+            continue;
+        }
+
+        const struct if_data *stats = (const struct if_data *)ifa->ifa_data;
+        BOOL isUp = (ifa->ifa_flags & IFF_UP) != 0;
+        BOOL isRunning = (ifa->ifa_flags & IFF_RUNNING) != 0;
+
+        ISInterfaceTrafficSample *sample = [[ISInterfaceTrafficSample alloc] initWithName:name
+                                                                                     isUp:isUp
+                                                                                isRunning:isRunning
+                                                                            receivedBytes:(uint64_t)stats->ifi_ibytes
+                                                                                sentBytes:(uint64_t)stats->ifi_obytes
+                                                                          receivedPackets:(uint64_t)stats->ifi_ipackets
+                                                                              sentPackets:(uint64_t)stats->ifi_opackets];
+        [samples addObject:sample];
+    }
+
+    freeifaddrs(ifaddr);
+    return samples;
+}
+
+- (ISProcessTelemetrySnapshot *)fetchProcessTelemetry {
+    uint64_t resident = 0;
+    uint64_t virtualSize = 0;
+    mach_task_basic_info_data_t taskInfo;
+    mach_msg_type_number_t infoCount = MACH_TASK_BASIC_INFO_COUNT;
+    if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&taskInfo, &infoCount) == KERN_SUCCESS) {
+        resident = (uint64_t)taskInfo.resident_size;
+        virtualSize = (uint64_t)taskInfo.virtual_size;
+    }
+
+    NSUInteger activeThreads = 0;
+    thread_act_array_t threadList = NULL;
+    mach_msg_type_number_t threadCount = 0;
+    if (task_threads(mach_task_self(), &threadList, &threadCount) == KERN_SUCCESS) {
+        activeThreads = (NSUInteger)threadCount;
+        if (threadList != NULL) {
+            for (mach_msg_type_number_t i = 0; i < threadCount; i++) {
+                mach_port_deallocate(mach_task_self(), threadList[i]);
+            }
+            if (threadCount > 0) {
+                vm_deallocate(mach_task_self(), (vm_address_t)threadList, (vm_size_t)(threadCount * sizeof(thread_act_t)));
+            }
+        }
+    }
+
+    BOOL dbg = [self isDebuggerAttached];
+    return [[ISProcessTelemetrySnapshot alloc] initWithResidentMemory:resident
+                                                        virtualMemory:virtualSize
+                                                    activeThreadCount:activeThreads
+                                                     debuggerAttached:dbg];
+}
+
 @end
+
+#pragma clang diagnostic pop

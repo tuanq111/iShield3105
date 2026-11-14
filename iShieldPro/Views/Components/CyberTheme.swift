@@ -1,6 +1,8 @@
 //
 //  CyberTheme.swift
-//  iShield3105
+//  iShieldPro
+//
+//  Commercial Cyber-Security Dark Theme Palette & Formatters
 //
 
 import SwiftUI
@@ -31,6 +33,16 @@ enum CyberTheme {
 
     static func formatBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+
+    static func formatRateBytesPerSec(_ bps: Double) -> String {
+        if bps < 1024 {
+            return String(format: "%.0f B/s", bps)
+        } else if bps < 1024 * 1024 {
+            return String(format: "%.1f KB/s", bps / 1024.0)
+        } else {
+            return String(format: "%.2f MB/s", bps / (1024.0 * 1024.0))
+        }
     }
 
     static func formatTimestamp(_ date: Date?) -> String {

@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>iShield3105</string>
+	<string>iShield Pro</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>$(PRODUCT_NAME)</string>
+	<string>iShield Pro</string>
 	<key>CFBundlePackageType</key>
 	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,6 +29,14 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>iShield Pro sử dụng Face ID / Touch ID để kiểm tra cấu hình bảo mật thiết bị và xác nhận thao tác xử lý nhạy cảm.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>iShield Pro sử dụng mạng cục bộ 127.0.0.1 để phục vụ cài đặt cấu hình DNS-over-HTTPS (.mobileconfig) qua Safari.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>iShield Pro cần quyền truy cập micro chỉ khi bạn kích hoạt chế độ Khóa Micro chống nghe lén hoặc giám sát chiếm dụng âm thanh.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>iShield Pro lưu ảnh đã xóa siêu dữ liệu vị trí GPS và EXIF để bảo vệ quyền riêng tư khi bạn chia sẻ.</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>
@@ -38,6 +46,8 @@
 	<array>
 		<string>arm64</string>
 	</array>
+	<key>UIRequiresFullScreen</key>
+	<true/>
 	<key>UIStatusBarStyle</key>
 	<string>UIStatusBarStyleLightContent</string>
 	<key>UISupportedInterfaceOrientations</key>

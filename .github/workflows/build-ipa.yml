@@ -1,4 +1,4 @@
-name: Build Unsigned iShield3105 IPA
+name: Build Unsigned iShield Pro IPA
 
 on:
   push:
@@ -13,7 +13,7 @@ on:
 
 jobs:
   build-unsigned-ipa:
-    name: Build iShield3105 (Release / iphoneos / Unsigned)
+    name: Build iShield Pro (Release / iphoneos / Unsigned)
     runs-on: macos-latest
 
     steps:
@@ -40,8 +40,8 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild build \
-            -project iShield3105.xcodeproj \
-            -scheme iShield3105 \
+            -project iShieldPro.xcodeproj \
+            -scheme iShieldPro \
             -configuration Release \
             -sdk iphoneos \
             -destination "generic/platform=iOS" \
@@ -54,38 +54,52 @@ jobs:
 
       - name: Verify Built App Bundle & Package Unsigned .ipa
         run: |
-          APP_PATH="build/Build/Products/Release-iphoneos/iShield3105.app"
+          APP_PATH="build/Build/Products/Release-iphoneos/iShieldPro.app"
           if [ ! -d "$APP_PATH" ]; then
             echo "Error: Built .app not found at $APP_PATH"
             find build -maxdepth 5
             exit 1
           fi
 
-          # Verify executable, Info.plist, Bundle ID and compiled assets
-          test -f "$APP_PATH/iShield3105"
-          file "$APP_PATH/iShield3105"
+          # Verify executable, Info.plist, Display Name, Bundle ID and compiled assets
+          test -f "$APP_PATH/iShieldPro"
+          file "$APP_PATH/iShieldPro"
           plutil -lint "$APP_PATH/Info.plist"
           BUNDLE_ID=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$APP_PATH/Info.plist")
+          DISPLAY_NAME=$(/usr/libexec/PlistBuddy -c "Print :CFBundleDisplayName" "$APP_PATH/Info.plist")
           echo "CFBundleIdentifier=$BUNDLE_ID"
+          echo "CFBundleDisplayName=$DISPLAY_NAME"
           test "$BUNDLE_ID" = "com.apple.mobile.MobileHouseArrest"
+          test "$DISPLAY_NAME" = "iShield Pro"
           test -f "$APP_PATH/Assets.car"
 
-          rm -rf Payload iShield3105-Unsigned.ipa
+          # Verify zero 3105 strings leaked into binary or Info.plist
+          if strings "$APP_PATH/iShieldPro" | grep -q "3105"; then
+            echo "Warning: found 3105 string in binary!"
+            strings "$APP_PATH/iShieldPro" | grep "3105" || true
+            exit 1
+          fi
+          if grep -q "3105" "$APP_PATH/Info.plist"; then
+            echo "Error: found 3105 in Info.plist!"
+            exit 1
+          fi
+
+          rm -rf Payload iShieldPro-Unsigned.ipa
           mkdir -p Payload
           cp -R "$APP_PATH" Payload/
           find Payload -name ".DS_Store" -delete
           xattr -cr Payload || true
           export COPYFILE_DISABLE=1
-          zip -r -y iShield3105-Unsigned.ipa Payload
+          zip -r -y iShieldPro-Unsigned.ipa Payload
           rm -rf Payload
 
-          ls -lh iShield3105-Unsigned.ipa
-          unzip -l iShield3105-Unsigned.ipa | head -n 35
+          ls -lh iShieldPro-Unsigned.ipa
+          unzip -l iShieldPro-Unsigned.ipa | head -n 35
 
-      - name: Upload iShield3105-Unsigned.ipa Artifact
+      - name: Upload iShieldPro-Unsigned.ipa Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: iShield3105-Unsigned
-          path: iShield3105-Unsigned.ipa
+          name: iShieldPro-Unsigned
+          path: iShieldPro-Unsigned.ipa
           retention-days: 30
           if-no-files-found: error

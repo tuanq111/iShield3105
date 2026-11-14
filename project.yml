@@ -1,4 +1,4 @@
-name: iShield3105
+name: iShieldPro
 options:
   bundleIdPrefix: com.apple.mobile
   deploymentTarget:
@@ -24,12 +24,12 @@ settings:
     CLANG_ENABLE_MODULES: "YES"
 
 targets:
-  iShield3105:
+  iShieldPro:
     type: application
     platform: iOS
     deploymentTarget: "16.0"
     sources:
-      - path: iShield3105
+      - path: iShieldPro
         excludes:
           - "**/*.md"
     dependencies:
@@ -40,17 +40,25 @@ targets:
       - sdk: SystemConfiguration.framework
       - sdk: UIKit.framework
       - sdk: SwiftUI.framework
+      - sdk: AVFoundation.framework
+      - sdk: CallKit.framework
+      - sdk: PhotosUI.framework
+      - sdk: ImageIO.framework
+      - sdk: AdSupport.framework
+      - sdk: AppTrackingTransparency.framework
+      - sdk: LocalAuthentication.framework
     settings:
       base:
-        PRODUCT_NAME: iShield3105
+        PRODUCT_NAME: iShieldPro
+        PRODUCT_MODULE_NAME: iShieldPro
         PRODUCT_BUNDLE_IDENTIFIER: com.apple.mobile.MobileHouseArrest
-        INFOPLIST_FILE: iShield3105/Resources/Info.plist
+        INFOPLIST_FILE: iShieldPro/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: "NO"
-        SWIFT_OBJC_BRIDGING_HEADER: iShield3105/Core/ContainerBridge.h
+        SWIFT_OBJC_BRIDGING_HEADER: iShieldPro/Core/ContainerBridge.h
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "2.0.0"
+        CURRENT_PROJECT_VERSION: "2"
         CODE_SIGNING_ALLOWED: "NO"
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGN_IDENTITY: ""
@@ -71,10 +79,10 @@ targets:
           VALIDATE_PRODUCT: "NO"
 
 schemes:
-  iShield3105:
+  iShieldPro:
     build:
       targets:
-        iShield3105: all
+        iShieldPro: all
     run:
       config: Debug
     archive:

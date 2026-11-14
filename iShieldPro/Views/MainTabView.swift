@@ -1,6 +1,8 @@
 //
 //  MainTabView.swift
-//  iShield3105
+//  iShieldPro
+//
+//  5-Tab Commercial Security Console
 //
 
 import SwiftUI
@@ -33,21 +35,31 @@ struct MainTabView: View {
                 coordinator: coordinator,
                 containerManager: coordinator.containerManager,
                 auditEngine: coordinator.auditEngine,
-                networkScanner: coordinator.networkScanner
+                networkScanner: coordinator.networkScanner,
+                activeDefense: coordinator.activeDefense
             )
             .tabItem {
                 Label("Tổng quan", systemImage: "shield.lefthalf.filled")
             }
             .tag(0)
 
+            ActiveDefenseView(
+                coordinator: coordinator,
+                defense: coordinator.activeDefense
+            )
+            .tabItem {
+                Label("Chống gián điệp", systemImage: "waveform.and.magnifyingglass")
+            }
+            .tag(1)
+
             ContainerInspectorView(
                 coordinator: coordinator,
                 containerManager: coordinator.containerManager
             )
             .tabItem {
-                Label("Container 3105", systemImage: "shippingbox.fill")
+                Label("Dọn App", systemImage: "shippingbox.fill")
             }
-            .tag(1)
+            .tag(2)
 
             NetworkShieldView(
                 coordinator: coordinator,
@@ -55,18 +67,19 @@ struct MainTabView: View {
                 dohManager: coordinator.dohManager
             )
             .tabItem {
-                Label("Mạng & IP", systemImage: "network.badge.shield.half.filled")
+                Label("Mạng & DNS", systemImage: "network.badge.shield.half.filled")
             }
-            .tag(2)
+            .tag(3)
 
             DeviceControlCheckView(
                 coordinator: coordinator,
-                auditEngine: coordinator.auditEngine
+                auditEngine: coordinator.auditEngine,
+                defense: coordinator.activeDefense
             )
             .tabItem {
-                Label("Kiểm soát", systemImage: "lock.shield.fill")
+                Label("Hệ thống", systemImage: "lock.shield.fill")
             }
-            .tag(3)
+            .tag(4)
         }
         .tint(CyberTheme.neonCyan)
         .task {

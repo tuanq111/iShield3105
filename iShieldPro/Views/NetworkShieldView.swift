@@ -1,8 +1,9 @@
 //
 //  NetworkShieldView.swift
-//  iShield3105
+//  iShieldPro
 //
-//  Kiểm tra Lộ IP Public, VPN Tunnel ẩn (utun/ipsec/ppp), Rò rỉ DNS & Cài đặt DoH .mobileconfig
+//  Public IP Leak Check, Hidden Tunnel Detector (<ifaddrs.h>), DNS Hijack Check (<resolv.h>)
+//  & Anti-Tracking DNS-over-HTTPS (.mobileconfig) Shield Installer
 //
 
 import SwiftUI
@@ -12,7 +13,7 @@ struct NetworkShieldView: View {
     @ObservedObject var networkScanner: NetworkPrivacyScanner
     @ObservedObject var dohManager: DoHProfileManager
 
-    @State private var selectedDoHProvider: DoHProviderOption = .cloudflareSecurity
+    @State private var selectedDoHProvider: DoHProviderOption = .adguardTracking
     @State private var showXMLPreview = false
     @State private var shareFileURL: URL?
     @State private var showShareSheet = false
@@ -34,7 +35,7 @@ struct NetworkShieldView: View {
                 .padding(.vertical, 12)
             }
             .background(CyberTheme.background.ignoresSafeArea())
-            .navigationTitle("Network & IP Shield")
+            .navigationTitle("Mạng & Lá Chắn DNS")
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $showShareSheet) {
                 if let url = shareFileURL {
@@ -202,12 +203,23 @@ struct NetworkShieldView: View {
             )
 
             if !report.suspiciousTunnels.isEmpty {
-                HStack(alignment: .top, spacing: 10) {
-                    Image(systemName: "exclamationmark.octagon.fill")
-                        .foregroundColor(CyberTheme.crimson)
-                    Text("Phát hiện \(report.suspiciousTunnels.count) đường hầm ảo hoạt động ngầm (\(report.suspiciousTunnels.map(\.name).joined(separator: ", "))). Nếu bạn không bật VPN, hãy kiểm tra mục Cài đặt > VPN & Quản lý thiết bị!")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(CyberTheme.crimson)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "exclamationmark.octagon.fill")
+                            .foregroundColor(CyberTheme.crimson)
+                        Text("Phát hiện \(report.suspiciousTunnels.count) đường hầm ảo hoạt động ngầm (\(report.suspiciousTunnels.map(\.name).joined(separator: ", "))). Nếu bạn không bật VPN, hãy xóa cấu hình VPN lạ ngay!")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(CyberTheme.crimson)
+                    }
+                    Button("Mở Cài đặt kiểm tra VPN & Quản lý Thiết bị") {
+                        coordinator.openIOSSettings()
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 7)
+                    .background(CyberTheme.crimson)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .padding(10)
                 .background(CyberTheme.crimson.opacity(0.14))
@@ -257,9 +269,9 @@ struct NetworkShieldView: View {
     private var dohProfileGeneratorCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeaderView(
-                title: "Trình tạo Cấu hình DNS-over-HTTPS (.mobileconfig)",
+                title: "Lá Chắn DNS-over-HTTPS Chặn Tracker (.mobileconfig)",
                 systemImage: "lock.doc.fill",
-                subtitle: "Mã hóa toàn bộ truy vấn DNS hệ thống iOS chống rò rỉ & chặn tracking"
+                subtitle: "Khóa DNS toàn hệ thống iOS chống rò rỉ & chặn domain gián điệp chạy ngầm"
             )
 
             Picker("Nhà cung cấp DoH", selection: $selectedDoHProvider) {
@@ -273,6 +285,11 @@ struct NetworkShieldView: View {
             .background(CyberTheme.elevatedSurface)
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
+            Toggle("Khóa On-Demand (Bắt buộc trên mọi Wi-Fi & 4G/5G)", isOn: $coordinator.policy.enforceOnDemandDoH)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(CyberTheme.textPrimary)
+                .tint(CyberTheme.emerald)
+
             VStack(alignment: .leading, spacing: 4) {
                 Text(selectedDoHProvider.description)
                     .font(.system(size: 12))
@@ -284,7 +301,17 @@ struct NetworkShieldView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    dohManager.installViaLocalSafari(for: selectedDoHProvider)
+                    dohManager.installViaLocalSafari(
+                        for: selectedDoHProvider,
+                        enforceOnDemand: coordinator.policy.enforceOnDemandDoH
+                    )
+                    coordinator.appendEvent(SecurityEventEntry(
+                        category: .network,
+                        severity: .safe,
+                        actionTaken: "Cài DNS Shield",
+                        title: "Khởi tạo cài đặt hồ sơ \(selectedDoHProvider.rawValue)",
+                        detail: "Phục vụ tệp .mobileconfig qua loopback để cài đặt trực tiếp vào iOS."
+                    ))
                 } label: {
                     HStack {
                         Image(systemName: "safari.fill")
@@ -300,7 +327,10 @@ struct NetworkShieldView: View {
 
                 Button {
                     do {
-                        shareFileURL = try dohManager.exportTemporaryProfileURL(for: selectedDoHProvider)
+                        shareFileURL = try dohManager.exportTemporaryProfileURL(
+                            for: selectedDoHProvider,
+                            enforceOnDemand: coordinator.policy.enforceOnDemandDoH
+                        )
                         showShareSheet = true
                     } catch {
                         alertError = error.localizedDescription
@@ -325,12 +355,19 @@ struct NetworkShieldView: View {
                     .foregroundColor(CyberTheme.neonCyan)
             }
 
+            Text("Cách hoàn tất cài đặt: Bấm 'Cài qua Safari' -> chọn Cho phép tải cấu hình -> vào Cài đặt iPhone > Đã tải về hồ sơ > Cài đặt. Sau đó quay lại iShield Pro, DNS Shield sẽ tự động bật xanh.")
+                .font(.system(size: 10))
+                .foregroundColor(CyberTheme.textMuted)
+
             DisclosureGroup("Xem trước mã XML .mobileconfig", isExpanded: $showXMLPreview) {
                 ScrollView(.horizontal, showsIndicators: true) {
-                    Text(dohManager.generateMobileConfigXML(for: selectedDoHProvider))
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(CyberTheme.textSecondary)
-                        .padding(.top, 8)
+                    Text(dohManager.generateMobileConfigXML(
+                        for: selectedDoHProvider,
+                        enforceOnDemand: coordinator.policy.enforceOnDemandDoH
+                    ))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(CyberTheme.textSecondary)
+                    .padding(.top, 8)
                 }
                 .frame(maxHeight: 220)
             }

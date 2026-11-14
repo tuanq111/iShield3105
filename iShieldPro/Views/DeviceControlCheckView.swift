@@ -1,8 +1,9 @@
 //
 //  DeviceControlCheckView.swift
-//  iShield3105
+//  iShieldPro
 //
-//  Kiểm tra MDM, Supervised, Root CA / MitM, Runtime Dylib Injection, Port nội bộ & Hướng dẫn gỡ bỏ
+//  MDM/Supervised Audit, Root CA / MitM Check, Runtime Dylib Injection, Loopback Ports,
+//  Interactive System Hardening Playbook & Persistent Security Audit Log
 //
 
 import SwiftUI
@@ -10,6 +11,7 @@ import SwiftUI
 struct DeviceControlCheckView: View {
     @ObservedObject var coordinator: SecurityDashboardCoordinator
     @ObservedObject var auditEngine: SecurityAuditEngine
+    @ObservedObject var defense: ActiveDefenseEngine
 
     @State private var dylibSearchText = ""
     @State private var showOnlySuspiciousDylibs = false
@@ -19,6 +21,7 @@ struct DeviceControlCheckView: View {
             ScrollView {
                 VStack(spacing: 14) {
                     actionHeaderCard
+                    hardeningChecklistCard
                     if let report = auditEngine.lastReport {
                         mdmAndSupervisionCard(report)
                         mitmAndProxyCard(report)
@@ -27,12 +30,13 @@ struct DeviceControlCheckView: View {
                         loadedDylibsCard(report)
                     }
                     remediationGuideCard
+                    eventHistoryCard
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
             .background(CyberTheme.background.ignoresSafeArea())
-            .navigationTitle("Device Control Check")
+            .navigationTitle("Kiểm Soát Thiết Bị")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -51,6 +55,7 @@ struct DeviceControlCheckView: View {
             Button {
                 Task {
                     _ = await auditEngine.runFullAudit()
+                    defense.sampleBackgroundAndTrafficGuard(maxUptimeDaysWarning: coordinator.policy.maxUptimeDaysBeforeWarning)
                     coordinator.syncScoreFromCurrentReports()
                 }
             } label: {
@@ -73,6 +78,90 @@ struct DeviceControlCheckView: View {
             .disabled(auditEngine.isScanning)
         }
         .cyberCard()
+    }
+
+    private var hardeningChecklistCard: some View {
+        let audit = auditEngine.lastReport
+        let bg = defense.backgroundSnapshot
+
+        return VStack(alignment: .leading, spacing: 10) {
+            SectionHeaderView(
+                title: "Bảng Kiểm Tra Cứng Hóa & Phòng Ngừa (Hardening)",
+                systemImage: "checklist.checked",
+                subtitle: "Tự động xác minh trực tiếp trạng thái bảo vệ của thiết bị"
+            )
+
+            hardeningRow(
+                title: "Khóa Mật mã / Face ID / Touch ID",
+                passed: bg?.passcodeOrBiometricEnabled ?? false,
+                actionTitle: "Mở Cài đặt",
+                action: { coordinator.openIOSSettings() }
+            )
+            hardeningRow(
+                title: "Không phát hiện MDM / Giám sát (Supervised)",
+                passed: audit.map { !$0.isSupervisedDetected && !$0.isMDMDetected } ?? true,
+                actionTitle: "Kiểm tra Profile",
+                action: { coordinator.openIOSSettings() }
+            )
+            hardeningRow(
+                title: "Không bị chặn bắt Proxy / Chứng chỉ CA MitM",
+                passed: audit.map { !$0.hasMitMRisk } ?? true,
+                actionTitle: "Tắt Proxy",
+                action: { coordinator.openIOSSettings() }
+            )
+            hardeningRow(
+                title: "Chống theo dõi IDFA (App Tracking Transparency)",
+                passed: !(bg?.idfaExposed ?? false),
+                actionTitle: "Cài đặt Quyền riêng tư",
+                action: { coordinator.openIOSSettings() }
+            )
+            hardeningRow(
+                title: "Hạn chế Làm mới ứng dụng trong nền",
+                passed: !(bg?.backgroundRefreshEnabled ?? false),
+                actionTitle: "Tắt Nền",
+                action: { coordinator.openIOSSettings() }
+            )
+            hardeningRow(
+                title: "Khởi động lại định kỳ (xóa exploit trong RAM)",
+                passed: !(bg?.needsRebootRecommended ?? false),
+                actionTitle: nil,
+                action: {}
+            )
+        }
+        .cyberCard()
+    }
+
+    private func hardeningRow(
+        title: String,
+        passed: Bool,
+        actionTitle: String?,
+        action: @escaping () -> Void
+    ) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: passed ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                .foregroundColor(passed ? CyberTheme.emerald : CyberTheme.amber)
+                .font(.system(size: 16))
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(CyberTheme.textPrimary)
+            Spacer()
+            if !passed, let actionTitle {
+                Button(actionTitle, action: action)
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(CyberTheme.neonCyan)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(CyberTheme.neonCyan.opacity(0.14))
+                    .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else {
+                Text(passed ? "ĐẠT" : "CẦN CHÚ Ý")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(passed ? CyberTheme.emerald : CyberTheme.amber)
+            }
+        }
+        .padding(9)
+        .background(CyberTheme.elevatedSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
     }
 
     private func mdmAndSupervisionCard(_ report: SecurityAuditReport) -> some View {
@@ -209,6 +298,23 @@ struct DeviceControlCheckView: View {
                 Text("• \(finding)")
                     .font(.system(size: 11))
                     .foregroundColor(CyberTheme.amber)
+            }
+
+            if report.hasMitMRisk {
+                Button {
+                    coordinator.openIOSSettings()
+                } label: {
+                    HStack {
+                        Image(systemName: "gearshape.fill")
+                        Text("Mở Cài đặt tắt Proxy / Thu hồi Chứng nhận Tin cậy")
+                            .font(.system(size: 12, weight: .bold))
+                    }
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(CyberTheme.crimson)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                }
             }
         }
         .cyberCard()
@@ -363,33 +469,82 @@ struct DeviceControlCheckView: View {
     private var remediationGuideCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeaderView(
-                title: "Hướng dẫn Gỡ bỏ Quyền Điều Khiển & Khắc phục",
+                title: "Quy trình Gỡ bỏ Quyền Điều Khiển & Phòng Ngừa",
                 systemImage: "lifepreserver.fill",
-                subtitle: "Quy trình xử lý chuẩn khi phát hiện xâm phạm trên iPhone"
+                subtitle: "Áp dụng khi phát hiện xâm phạm cấp hệ thống trên iPhone"
             )
 
             guideStep(
                 number: "1",
                 title: "Gỡ hồ sơ MDM & Chứng chỉ doanh nghiệp lạ",
-                detail: "Vào Cài đặt > Cài đặt chung > Quản lý VPN & Thiết bị -> Xóa toàn bộ hồ sơ cấu hình (Profile) không rõ nguồn gốc và thu hồi tin cậy các chứng chỉ không thuộc tổ chức bạn biết."
+                detail: "Vào Cài đặt > Cài đặt chung > Quản lý VPN & Thiết bị -> Xóa toàn bộ hồ sơ cấu hình (Profile) không rõ nguồn gốc và thu hồi tin cậy các chứng chỉ lạ."
             )
             guideStep(
                 number: "2",
-                title: "Tắt tin cậy Root CA chặn bắt TLS (MitM)",
-                detail: "Vào Cài đặt > Cài đặt chung > Giới thiệu > Cài đặt tin cậy chứng nhận -> Tắt toàn bộ Root CA lạ (Charles, mitmproxy, proxy nội bộ), sau đó vào Wi-Fi đang kết nối > Định cấu hình Proxy > chọn Tắt."
+                title: "Tắt tin cậy Root CA chặn bắt TLS (MitM) & Proxy",
+                detail: "Vào Cài đặt > Cài đặt chung > Giới thiệu > Cài đặt tin cậy chứng nhận -> Tắt toàn bộ Root CA lạ (Charles, mitmproxy, proxy nội bộ), rồi vào Wi-Fi > Định cấu hình Proxy > Tắt."
             )
             guideStep(
                 number: "3",
                 title: "Xử lý máy bị gắn cờ Supervised / MDM không thể xóa",
-                detail: "Nếu IsSupervised = true và hồ sơ khóa nút Gỡ bỏ (IsMDMUnremovable), cần sao lưu dữ liệu cá nhân thủ công (không dùng bản sao lưu iTunes/iCloud chứa cấu hình MDM), đưa máy về DFU Restore qua Finder/iTunes."
+                detail: "Nếu IsSupervised = true và hồ sơ khóa nút Gỡ bỏ, hãy sao lưu thủ công dữ liệu cá nhân (không khôi phục từ bản backup chứa MDM) rồi DFU Restore qua Finder/iTunes."
             )
             guideStep(
                 number: "4",
-                title: "Xử lý khi phát hiện Frida / Dylib lạ / Cổng Backdoor",
-                detail: "Xóa ngay các file .ipa sideload nghi bị tiêm dylib, khởi động lại máy để xóa trạng thái jailbreak/tweak trong RAM, đổi mật khẩu Apple ID và toàn bộ tài khoản ngân hàng/email."
+                title: "Phòng ngừa tái nhiễm & Bật Chế độ Phong Tỏa",
+                detail: "Bật Cài đặt > Quyền riêng tư & Bảo mật > Chế độ Phong tỏa (Lockdown Mode) nếu nghi bị spyware nhắm mục tiêu, tắt Làm mới ứng dụng trong nền và cài hồ sơ DNS Shield On-Demand."
             )
         }
         .cyberCard(borderColor: CyberTheme.neonCyan.opacity(0.3))
+    }
+
+    private var eventHistoryCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                SectionHeaderView(
+                    title: "Nhật ký Sự cố & Xử lý Toàn diện (\(coordinator.eventLog.count))",
+                    systemImage: "list.bullet.clipboard.fill",
+                    subtitle: "Lưu vết tự động các hành động phòng vệ và khắc phục"
+                )
+                if !coordinator.eventLog.isEmpty {
+                    Button("Xóa log") {
+                        coordinator.clearEventLog()
+                    }
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(CyberTheme.crimson)
+                }
+            }
+
+            if coordinator.eventLog.isEmpty {
+                Text("Chưa có nhật ký sự kiện.")
+                    .font(.system(size: 12))
+                    .foregroundColor(CyberTheme.textSecondary)
+            } else {
+                ForEach(coordinator.eventLog.prefix(25)) { entry in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text("[\(entry.actionTaken)]")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundColor(CyberTheme.color(for: entry.severity))
+                            Spacer()
+                            Text(CyberTheme.formatTimestamp(entry.timestamp))
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(CyberTheme.textMuted)
+                        }
+                        Text(entry.title)
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(CyberTheme.textPrimary)
+                        Text(entry.detail)
+                            .font(.system(size: 11))
+                            .foregroundColor(CyberTheme.textSecondary)
+                    }
+                    .padding(9)
+                    .background(CyberTheme.elevatedSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+            }
+        }
+        .cyberCard()
     }
 
     private func guideStep(number: String, title: String, detail: String) -> some View {

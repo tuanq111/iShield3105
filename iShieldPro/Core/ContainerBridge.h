@@ -1,6 +1,6 @@
 //
 //  ContainerBridge.h
-//  iShield3105
+//  iShieldPro
 //
 //  Private Framework & Low-Level C/ObjC System Bridge
 //
@@ -62,6 +62,7 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, copy) NSString *displayName;
 @property (nonatomic, readonly, copy) NSString *applicationType;
 @property (nonatomic, readonly, copy, nullable) NSString *shortVersion;
+@property (nonatomic, readonly, nullable) NSURL *bundleURL;
 @property (nonatomic, readonly, nullable) NSURL *dataContainerURL;
 @property (nonatomic, readonly, copy) NSDictionary<NSString *, NSURL *> *groupContainerURLs;
 @property (nonatomic, readonly, copy) NSArray<NSString *> *pluginIdentifiers;
@@ -79,6 +80,23 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic, readonly, copy) NSString *imagePath;
 @property (nonatomic, readonly, copy) NSString *imageName;
 @property (nonatomic, readonly, copy, nullable) NSString *architecture;
+@end
+
+@interface ISInterfaceTrafficSample : NSObject
+@property (nonatomic, readonly, copy) NSString *interfaceName;
+@property (nonatomic, readonly) BOOL isUp;
+@property (nonatomic, readonly) BOOL isRunning;
+@property (nonatomic, readonly) uint64_t receivedBytes;
+@property (nonatomic, readonly) uint64_t sentBytes;
+@property (nonatomic, readonly) uint64_t receivedPackets;
+@property (nonatomic, readonly) uint64_t sentPackets;
+@end
+
+@interface ISProcessTelemetrySnapshot : NSObject
+@property (nonatomic, readonly) uint64_t residentMemoryBytes;
+@property (nonatomic, readonly) uint64_t virtualMemoryBytes;
+@property (nonatomic, readonly) NSUInteger activeThreadCount;
+@property (nonatomic, readonly) BOOL debuggerAttached;
 @end
 
 #pragma mark - ISContainerBridge
@@ -116,6 +134,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Probes TCP loopback 127.0.0.1 on the given port with non-blocking timeout (milliseconds).
 - (BOOL)isLocalhostPortOpen:(uint16_t)port timeoutMilliseconds:(int)timeoutMs;
+
+/// Samples kernel-level network interface RX/TX byte counters (AF_LINK / if_data).
+- (NSArray<ISInterfaceTrafficSample *> *)fetchNetworkTrafficSamples;
+
+/// Captures Mach task memory/thread telemetry and debugger status for background anomaly monitoring.
+- (ISProcessTelemetrySnapshot *)fetchProcessTelemetry;
 
 @end
 

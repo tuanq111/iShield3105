@@ -1,6 +1,6 @@
 //
 //  DoHProfileManager.swift
-//  iShield3105
+//  iShieldPro
 //
 //  Generates iOS DNS-over-HTTPS (.mobileconfig) Profiles & Serves via Local Loopback for 1-Tap Safari Install
 //
@@ -16,9 +16,12 @@ final class DoHProfileManager: ObservableObject {
 
     private var listener: NWListener?
     private var autoStopTask: Task<Void, Never>?
-    private let listenerQueue = DispatchQueue(label: "com.ishield3105.dohserver")
+    private let listenerQueue = DispatchQueue(label: "com.ishield.pro.dohserver")
 
-    func generateMobileConfigXML(for provider: DoHProviderOption) -> String {
+    func generateMobileConfigXML(
+        for provider: DoHProviderOption,
+        enforceOnDemand: Bool = true
+    ) -> String {
         let payloadUUID = UUID().uuidString.uppercased()
         let rootUUID = UUID().uuidString.uppercased()
         let identifierSlug = provider.serverURL
@@ -29,6 +32,22 @@ final class DoHProfileManager: ObservableObject {
         let addressesXML = provider.serverAddresses
             .map { "                    <string>\(xmlEscaped($0))</string>" }
             .joined(separator: "\n")
+
+        let onDemandXML: String
+        if enforceOnDemand {
+            onDemandXML = """
+            
+                        <key>OnDemandRules</key>
+                        <array>
+                            <dict>
+                                <key>Action</key>
+                                <string>Connect</string>
+                            </dict>
+                        </array>
+            """
+        } else {
+            onDemandXML = ""
+        }
 
         return """
         <?xml version="1.0" encoding="UTF-8"?>
@@ -48,13 +67,13 @@ final class DoHProfileManager: ObservableObject {
                         <array>
         \(addressesXML)
                         </array>
-                    </dict>
+                    </dict>\(onDemandXML)
                     <key>PayloadDescription</key>
-                    <string>Cấu hình DNS-over-HTTPS chống rò rỉ DNS và chặn tên miền theo dõi bởi iShield3105</string>
+                    <string>Cấu hình DNS-over-HTTPS chống rò rỉ DNS, chặn tracker chạy ngầm và bảo vệ quyền riêng tư bởi iShield Pro</string>
                     <key>PayloadDisplayName</key>
                     <string>\(xmlEscaped(provider.rawValue)) (DoH)</string>
                     <key>PayloadIdentifier</key>
-                    <string>com.ishield3105.dnsSettings.\(identifierSlug)</string>
+                    <string>com.ishield.pro.dnsSettings.\(identifierSlug)</string>
                     <key>PayloadType</key>
                     <string>com.apple.dnsSettings.managed</string>
                     <key>PayloadUUID</key>
@@ -68,11 +87,11 @@ final class DoHProfileManager: ObservableObject {
             <key>PayloadDescription</key>
             <string>\(xmlEscaped(provider.description))</string>
             <key>PayloadDisplayName</key>
-            <string>iShield3105 Shield - \(xmlEscaped(provider.rawValue))</string>
+            <string>iShield Pro DNS Shield - \(xmlEscaped(provider.rawValue))</string>
             <key>PayloadIdentifier</key>
-            <string>com.ishield3105.profile.doh.\(identifierSlug)</string>
+            <string>com.ishield.pro.profile.doh.\(identifierSlug)</string>
             <key>PayloadOrganization</key>
-            <string>iShield3105 Local Security</string>
+            <string>iShield Pro Mobile Security</string>
             <key>PayloadRemovalDisallowed</key>
             <false/>
             <key>PayloadType</key>
@@ -86,20 +105,24 @@ final class DoHProfileManager: ObservableObject {
         """
     }
 
-    func exportTemporaryProfileURL(for provider: DoHProviderOption) throws -> URL {
-        let xml = generateMobileConfigXML(for: provider)
+    func exportTemporaryProfileURL(
+        for provider: DoHProviderOption,
+        enforceOnDemand: Bool = true
+    ) throws -> URL {
+        let xml = generateMobileConfigXML(for: provider, enforceOnDemand: enforceOnDemand)
         guard let data = xml.data(using: .utf8) else {
-            throw NSError(domain: "iShield3105.DoH", code: 1, userInfo: [
+            throw NSError(domain: "iShieldPro.DoH", code: 1, userInfo: [
                 NSLocalizedDescriptionKey: "Không thể mã hóa dữ liệu UTF-8 cho .mobileconfig"
             ])
         }
 
         let safeName: String
         switch provider {
-        case .cloudflareStandard: safeName = "iShield3105-Cloudflare-1111.mobileconfig"
-        case .cloudflareSecurity: safeName = "iShield3105-Cloudflare-MalwareBlock.mobileconfig"
-        case .quad9Recommended: safeName = "iShield3105-Quad9-DoH.mobileconfig"
-        case .adguardTracking: safeName = "iShield3105-AdGuard-DoH.mobileconfig"
+        case .adguardTracking: safeName = "iShield-AdGuard-AntiTracking-DoH.mobileconfig"
+        case .controlDPrivacy: safeName = "iShield-ControlD-Privacy-DoH.mobileconfig"
+        case .cloudflareSecurity: safeName = "iShield-Cloudflare-MalwareBlock.mobileconfig"
+        case .quad9Recommended: safeName = "iShield-Quad9-ThreatBlock-DoH.mobileconfig"
+        case .cloudflareStandard: safeName = "iShield-Cloudflare-1111.mobileconfig"
         }
 
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
@@ -108,10 +131,13 @@ final class DoHProfileManager: ObservableObject {
         return tempURL
     }
 
-    func installViaLocalSafari(for provider: DoHProviderOption) {
+    func installViaLocalSafari(
+        for provider: DoHProviderOption,
+        enforceOnDemand: Bool = true
+    ) {
         stopServer()
 
-        let xml = generateMobileConfigXML(for: provider)
+        let xml = generateMobileConfigXML(for: provider, enforceOnDemand: enforceOnDemand)
         guard let payloadData = xml.data(using: .utf8) else {
             lastStatusMessage = "Lỗi tạo dữ liệu .mobileconfig."
             return
@@ -129,9 +155,9 @@ final class DoHProfileManager: ObservableObject {
                     switch state {
                     case .ready:
                         if let port = newListener.port?.rawValue,
-                           let url = URL(string: "http://127.0.0.1:\(port)/ishield-doh.mobileconfig") {
+                           let url = URL(string: "http://127.0.0.1:\(port)/ishield-dns-shield.mobileconfig") {
                             self.isServingProfile = true
-                            self.lastStatusMessage = "Đang mở Safari để tải cấu hình DoH (http://127.0.0.1:\(port))..."
+                            self.lastStatusMessage = "Đang mở Safari tải hồ sơ DNS Shield (http://127.0.0.1:\(port)) -> bấm Cho phép rồi vào Cài đặt > Đã tải về hồ sơ để cài."
                             UIApplication.shared.open(url)
                         }
                     case .failed(let error):
@@ -152,7 +178,6 @@ final class DoHProfileManager: ObservableObject {
             listener = newListener
             newListener.start(queue: listenerQueue)
 
-            // Automatically shut down loopback listener after 90 seconds
             autoStopTask = Task { [weak self] in
                 try? await Task.sleep(nanoseconds: 90_000_000_000)
                 guard !Task.isCancelled else { return }
@@ -177,7 +202,7 @@ final class DoHProfileManager: ObservableObject {
             let header = [
                 "HTTP/1.1 200 OK",
                 "Content-Type: application/x-apple-aspen-config",
-                "Content-Disposition: attachment; filename=\"iShield3105-DoH.mobileconfig\"",
+                "Content-Disposition: attachment; filename=\"iShield-DNS-Shield.mobileconfig\"",
                 "Content-Length: \(payload.count)",
                 "Cache-Control: no-store",
                 "Connection: close",

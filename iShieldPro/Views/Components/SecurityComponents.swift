@@ -1,6 +1,8 @@
 //
 //  SecurityComponents.swift
-//  iShield3105
+//  iShieldPro
+//
+//  Reusable Commercial Security Dashboard Components & Remediation Controls
 //
 
 import SwiftUI
@@ -25,6 +27,34 @@ struct SeverityBadge: View {
                 Capsule(style: .continuous)
                     .stroke(tint.opacity(0.45), lineWidth: 1)
             )
+    }
+}
+
+struct ProtectionPill: View {
+    let label: String
+    let isActive: Bool
+    let activeColor: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Circle()
+                .fill(isActive ? activeColor : CyberTheme.textMuted)
+                .frame(width: 7, height: 7)
+            Text(label)
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(isActive ? activeColor : CyberTheme.textSecondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            Capsule(style: .continuous)
+                .fill(isActive ? activeColor.opacity(0.14) : CyberTheme.elevatedSurface)
+        )
+        .overlay(
+            Capsule(style: .continuous)
+                .stroke(isActive ? activeColor.opacity(0.45) : CyberTheme.border, lineWidth: 1)
+        )
     }
 }
 
@@ -94,7 +124,7 @@ struct SecurityScoreRing: View {
                     Text("\(score)")
                         .font(.system(size: 42, weight: .heavy, design: .monospaced))
                         .foregroundColor(tint)
-                    Text("ĐIỂM AN TOÀN")
+                    Text("CHỈ SỐ AN TOÀN")
                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                         .foregroundColor(CyberTheme.textSecondary)
                     SeverityBadge(severity: severity)
@@ -102,7 +132,7 @@ struct SecurityScoreRing: View {
                 }
             }
         }
-        .frame(width: 170, height: 170)
+        .frame(width: 168, height: 168)
     }
 }
 
@@ -173,6 +203,71 @@ struct AlertBannerCard: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+struct RemediationTaskCard: View {
+    let task: RemediationTask
+    let onExecute: () -> Void
+
+    var body: some View {
+        let tint = task.isResolved ? CyberTheme.emerald : CyberTheme.color(for: task.severity)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 10) {
+                Image(systemName: task.isResolved ? "checkmark.shield.fill" : (task.canAutoFix ? "bolt.shield.fill" : "gear.badge.xmark"))
+                    .font(.system(size: 18))
+                    .foregroundColor(tint)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack {
+                        Text(task.category.rawValue.uppercased())
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(tint)
+                        Spacer()
+                        SeverityBadge(
+                            severity: task.isResolved ? .safe : task.severity,
+                            customText: task.isResolved ? "ĐÃ KHẮC PHỤC" : (task.canAutoFix ? "TỰ ĐỘNG XỬ LÝ" : "HƯỚNG DẪN iOS")
+                        )
+                    }
+                    Text(task.title)
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(CyberTheme.textPrimary)
+                    Text(task.detail)
+                        .font(.system(size: 11))
+                        .foregroundColor(CyberTheme.textSecondary)
+                }
+            }
+
+            if !task.isResolved {
+                HStack {
+                    Spacer()
+                    Button(action: onExecute) {
+                        HStack(spacing: 6) {
+                            Image(systemName: task.canAutoFix ? "wand.and.stars" : "arrow.up.forward.app")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(task.actionLabel)
+                                .font(.system(size: 12, weight: .bold))
+                        }
+                        .foregroundColor(task.canAutoFix ? CyberTheme.background : CyberTheme.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(task.canAutoFix ? tint : CyberTheme.cardSurface)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .stroke(tint.opacity(0.6), lineWidth: task.canAutoFix ? 0 : 1)
+                        )
+                    }
+                }
+            }
+        }
+        .padding(11)
+        .background(CyberTheme.elevatedSurface)
+        .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .stroke(tint.opacity(0.35), lineWidth: 1)
+        )
     }
 }
 

@@ -1,8 +1,8 @@
 //
 //  ContainerInspectorView.swift
-//  iShield3105
+//  iShieldPro
 //
-//  Cơ chế 3105: Kiểm tra Data/AppGroup Container, Library/Caches, tmp, Preferences/*.plist & Quarantine
+//  App Deep Guard: Container Inspection, Batch Cleanup, Tracking Sanitizer & Quarantine Vault
 //
 
 import SwiftUI
@@ -13,7 +13,9 @@ struct ContainerInspectorView: View {
 
     @State private var showingAppPicker = false
     @State private var showingCleanConfirm = false
+    @State private var showingBatchConfirm = false
     @State private var sanitizePlistKeys = true
+    @State private var quarantineBeforeClean = true
     @State private var preferenceSearchText = ""
     @State private var showOnlySuspiciousPrefs = false
     @State private var alertMessage: String?
@@ -22,6 +24,7 @@ struct ContainerInspectorView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 14) {
+                    batchRemediationCard
                     targetInputCard
                     if let report = containerManager.lastInspection {
                         containerPathsCard(report)
@@ -31,13 +34,14 @@ struct ContainerInspectorView: View {
                     } else {
                         emptyStateCard
                     }
+                    quarantineFilesCard
                     quarantineBackupsCard
                 }
                 .padding(.horizontal, 16)
                 .padding(.vertical, 12)
             }
             .background(CyberTheme.background.ignoresSafeArea())
-            .navigationTitle("Container 3105")
+            .navigationTitle("App Deep Guard")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -62,27 +66,60 @@ struct ContainerInspectorView: View {
                 )
             }
             .confirmationDialog(
-                "Xác nhận làm sạch Container 3105?",
+                "Xác nhận làm sạch & cách ly?",
                 isPresented: $showingCleanConfirm,
                 titleVisibility: .visible
             ) {
-                Button("Làm sạch Library/Caches & tmp" + (sanitizePlistKeys ? " + Khử khóa theo dõi .plist" : ""), role: .destructive) {
+                Button("Thực hiện Dọn Cache, Cách Ly & Khử .plist", role: .destructive) {
                     if let report = containerManager.lastInspection {
                         Task {
                             let summary = await containerManager.cleanTrackingCaches(
                                 for: report,
-                                sanitizeSuspiciousPreferences: sanitizePlistKeys
+                                sanitizeSuspiciousPreferences: sanitizePlistKeys,
+                                quarantineCriticalArtifacts: quarantineBeforeClean
                             )
                             coordinator.syncScoreFromCurrentReports()
-                            alertMessage = "Đã xóa \(summary.removedItemsCount) mục (giải phóng \(CyberTheme.formatBytes(summary.freedBytes))). Sao lưu \(summary.backedUpPlistCount) .plist, khử \(summary.sanitizedPlistKeysCount) khóa theo dõi."
+                            let msg = "Đã xóa \(summary.removedItemsCount) mục (\(CyberTheme.formatBytes(summary.freedBytes))), cách ly \(summary.quarantinedFilesCount) tệp, sao lưu \(summary.backedUpPlistCount) .plist, khử \(summary.sanitizedPlistKeysCount) khóa theo dõi."
+                            coordinator.appendEvent(SecurityEventEntry(
+                                category: .container,
+                                severity: .safe,
+                                actionTaken: "Dọn Container App",
+                                title: "Làm sạch & Khử theo dõi \(report.bundleIdentifier)",
+                                detail: msg
+                            ))
+                            alertMessage = msg
                         }
                     }
                 }
                 Button("Hủy", role: .cancel) {}
             } message: {
-                Text("Thao tác xóa chỉ thực hiện trong Library/Caches và tmp. Nếu bật khử khóa .plist, tệp gốc luôn được sao lưu SHA-256 vào Quarantine trước khi sửa.")
+                Text("Thao tác xóa chỉ thực hiện trong Library/Caches và tmp. Tệp nhị phân/proxy nghi ngờ sẽ được cách ly an toàn, và tệp .plist gốc luôn sao lưu SHA-256 trước khi sửa.")
             }
-            .alert("Thông báo Container 3105", isPresented: Binding(
+            .confirmationDialog(
+                "Quét & Dọn hàng loạt ứng dụng khả dụng?",
+                isPresented: $showingBatchConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Quét sâu & Dọn toàn bộ App khả dụng", role: .destructive) {
+                    Task {
+                        let sum = await containerManager.batchInspectAndRemediateAllAccessible(cleanAndSanitize: true)
+                        coordinator.syncScoreFromCurrentReports()
+                        let msg = "Đã rà soát \(sum.scannedAppsCount) app (\(sum.accessibleAppsCount) container đọc được), xử lý \(sum.cleanedAppsCount) app, giải phóng \(CyberTheme.formatBytes(sum.totalFreedBytes)), cách ly \(sum.totalQuarantinedFiles) tệp, khử \(sum.totalSanitizedPlistKeys) khóa .plist."
+                        coordinator.appendEvent(SecurityEventEntry(
+                            category: .container,
+                            severity: .safe,
+                            actionTaken: "Dọn Hàng Loạt App",
+                            title: "Quét & Xử lý hàng loạt Container",
+                            detail: msg
+                        ))
+                        alertMessage = msg
+                    }
+                }
+                Button("Hủy", role: .cancel) {}
+            } message: {
+                Text("iShield Pro sẽ kiểm tra các container ứng dụng có quyền đọc, tự động cách ly file lạ, xóa cache/tmp và sao lưu SHA-256 trước khi gỡ khóa theo dõi .plist.")
+            }
+            .alert("Thông báo App Deep Guard", isPresented: Binding(
                 get: { alertMessage != nil },
                 set: { if !$0 { alertMessage = nil } }
             )) {
@@ -93,10 +130,48 @@ struct ContainerInspectorView: View {
         }
     }
 
+    private var batchRemediationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeaderView(
+                title: "Xử lý Hàng Loạt Toàn Bộ App Khả Dụng",
+                systemImage: "sparkles.rectangle.stack.fill",
+                subtitle: "Tự động rà soát, cách ly tệp nghi ngờ & xóa cache theo dõi trên nhiều app cùng lúc"
+            )
+
+            Button {
+                showingBatchConfirm = true
+            } label: {
+                HStack {
+                    if containerManager.isBatchProcessing {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: CyberTheme.background))
+                    } else {
+                        Image(systemName: "bolt.fill")
+                    }
+                    Text(containerManager.isBatchProcessing ? "Đang quét & dọn hàng loạt..." : "Quét Sâu & Dọn Hàng Loạt App")
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundColor(CyberTheme.background)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(CyberTheme.emerald)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .disabled(containerManager.isBatchProcessing || containerManager.isInspecting)
+
+            if let batch = containerManager.lastBatchSummary {
+                Text("Gần nhất: xử lý \(batch.cleanedAppsCount)/\(batch.accessibleAppsCount) app khả dụng • giải phóng \(CyberTheme.formatBytes(batch.totalFreedBytes)) • cách ly \(batch.totalQuarantinedFiles) tệp • khử \(batch.totalSanitizedPlistKeys) khóa .plist")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(CyberTheme.neonCyan)
+            }
+        }
+        .cyberCard(borderColor: CyberTheme.emerald.opacity(0.35))
+    }
+
     private var targetInputCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeaderView(
-                title: "Mục tiêu Container (Cơ chế 3105)",
+                title: "Kiểm tra Container Ứng Dụng Mục Tiêu",
                 systemImage: "magnifyingglass.circle.fill",
                 subtitle: "Truy xuất qua MCMAppDataContainer & MCMSharedDataContainer"
             )
@@ -167,7 +242,7 @@ struct ContainerInspectorView: View {
     private func containerPathsCard(_ report: ContainerInspectionReport) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             SectionHeaderView(
-                title: "Đường dẫn Sandbox thực tế",
+                title: "Đường dẫn Sandbox & Quyền Nền Ứng Dụng",
                 systemImage: "folder.badge.gearshape",
                 subtitle: report.bundleIdentifier
             )
@@ -180,7 +255,7 @@ struct ContainerInspectorView: View {
                     valueColor: report.dataContainerReadable ? CyberTheme.emerald : CyberTheme.amber
                 )
                 TelemetryKeyValueRow(
-                    label: "Sandbox Token (3105)",
+                    label: "Sandbox Token",
                     value: report.sandboxTokenConsumed ? "CONSUMED" : "NONE / STANDARD",
                     valueColor: report.sandboxTokenConsumed ? CyberTheme.emerald : CyberTheme.textSecondary
                 )
@@ -189,6 +264,16 @@ struct ContainerInspectorView: View {
                     label: "Data Container",
                     value: report.dataContainerError ?? "Không truy xuất được",
                     valueColor: CyberTheme.crimson
+                )
+            }
+
+            if !report.backgroundModesDetected.isEmpty {
+                TelemetryKeyValueRow(
+                    label: "UIBackgroundModes",
+                    value: report.backgroundModesDetected.joined(separator: ", "),
+                    valueColor: report.backgroundModesDetected.contains(where: { $0 == "audio" || $0 == "voip" || $0 == "location" })
+                        ? CyberTheme.amber
+                        : CyberTheme.neonCyan
                 )
             }
 
@@ -205,7 +290,7 @@ struct ContainerInspectorView: View {
 
             if !report.resolvedPluginContainers.isEmpty {
                 TelemetryKeyValueRow(
-                    label: "PluginKit Containers",
+                    label: "PluginKit Extensions",
                     value: "\(report.resolvedPluginContainers.count) extension",
                     valueColor: CyberTheme.neonCyan
                 )
@@ -217,9 +302,9 @@ struct ContainerInspectorView: View {
     private func cacheAndCleanCard(_ report: ContainerInspectionReport) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionHeaderView(
-                title: "Dọn dẹp & Khử theo dõi an toàn",
+                title: "Dọn Dẹp, Cách Ly & Khử Theo Dõi An Toàn",
                 systemImage: "wand.and.stars",
-                subtitle: "Chỉ xóa bên trong Library/Caches và tmp"
+                subtitle: "Xóa an toàn trong Library/Caches & tmp, giữ nguyên dữ liệu người dùng"
             )
 
             HStack(spacing: 12) {
@@ -240,12 +325,24 @@ struct ContainerInspectorView: View {
                 )
             }
 
-            Toggle(isOn: $sanitizePlistKeys) {
+            Toggle(isOn: $quarantineBeforeClean) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Sao lưu & khử khóa theo dõi trong .plist")
+                    Text("Cách ly tệp .dylib / proxy lạ vào Kho Cách Ly")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(CyberTheme.textPrimary)
-                    Text("Tạo bản sao lưu SHA-256 trước khi gỡ các khóa tracking/proxy")
+                    Text("Di chuyển nhị phân đáng ngờ ra khỏi vùng chạy của app trước khi dọn dẹp")
+                        .font(.system(size: 11))
+                        .foregroundColor(CyberTheme.textSecondary)
+                }
+            }
+            .tint(CyberTheme.emerald)
+
+            Toggle(isOn: $sanitizePlistKeys) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Sao lưu SHA-256 & khử khóa theo dõi .plist")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(CyberTheme.textPrimary)
+                    Text("Gỡ proxy, IDFA, fingerprint, telemetry và giữ bản sao lưu khôi phục 1 chạm")
                         .font(.system(size: 11))
                         .foregroundColor(CyberTheme.textSecondary)
                 }
@@ -257,7 +354,7 @@ struct ContainerInspectorView: View {
             } label: {
                 HStack {
                     Image(systemName: "trash.fill")
-                    Text("Làm sạch & Khử theo dõi (Clean Tracking Cache)")
+                    Text("Làm sạch, Cách Ly & Khử Theo Dõi")
                         .font(.system(size: 14, weight: .bold))
                 }
                 .foregroundColor(.white)
@@ -269,7 +366,7 @@ struct ContainerInspectorView: View {
             .disabled(report.dataContainerURL == nil)
 
             if let cleanup = containerManager.lastCleanup, cleanup.bundleIdentifier == report.bundleIdentifier {
-                Text("Lần dọn gần nhất: xóa \(cleanup.removedItemsCount) mục (\(CyberTheme.formatBytes(cleanup.freedBytes))), backup \(cleanup.backedUpPlistCount) plist, khử \(cleanup.sanitizedPlistKeysCount) khóa.")
+                Text("Lần dọn gần nhất: xóa \(cleanup.removedItemsCount) mục (\(CyberTheme.formatBytes(cleanup.freedBytes))), cách ly \(cleanup.quarantinedFilesCount) tệp, backup \(cleanup.backedUpPlistCount) plist, khử \(cleanup.sanitizedPlistKeysCount) khóa.")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(CyberTheme.emerald)
             }
@@ -309,7 +406,7 @@ struct ContainerInspectorView: View {
                     .foregroundColor(CyberTheme.emerald)
             } else {
                 ForEach(report.suspiciousFiles) { file in
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 6) {
                         HStack {
                             Text(file.kind.rawValue)
                                 .font(.system(size: 12, weight: .bold))
@@ -320,9 +417,30 @@ struct ContainerInspectorView: View {
                         Text(file.relativePath)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(CyberTheme.textPrimary)
-                        Text("\(file.reason) • \(CyberTheme.formatBytes(file.sizeBytes))")
-                            .font(.system(size: 11))
-                            .foregroundColor(CyberTheme.textSecondary)
+                        HStack {
+                            Text("\(file.reason) • \(CyberTheme.formatBytes(file.sizeBytes))")
+                                .font(.system(size: 11))
+                                .foregroundColor(CyberTheme.textSecondary)
+                            Spacer()
+                            Button("Cách ly ngay") {
+                                Task {
+                                    let res = await containerManager.quarantineSingleFile(file, bundleIdentifier: report.bundleIdentifier)
+                                    coordinator.syncScoreFromCurrentReports()
+                                    switch res {
+                                    case .success(let rec):
+                                        alertMessage = "Đã cách ly \(rec.fileName) an toàn."
+                                    case .failure(let err):
+                                        alertMessage = "Không thể cách ly: \(err.localizedDescription)"
+                                    }
+                                }
+                            }
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(CyberTheme.background)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(CyberTheme.amber)
+                            .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
                     }
                     .padding(10)
                     .background(CyberTheme.elevatedSurface)
@@ -395,10 +513,55 @@ struct ContainerInspectorView: View {
                     .background(CyberTheme.elevatedSurface)
                     .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                if filtered.count > 60 {
-                    Text("Đang hiển thị 60 khóa đầu tiên — dùng ô tìm kiếm để lọc chi tiết.")
-                        .font(.system(size: 11))
-                        .foregroundColor(CyberTheme.textMuted)
+            }
+        }
+        .cyberCard()
+    }
+
+    private var quarantineFilesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionHeaderView(
+                title: "Kho Cách Ly Tệp Nguy Hiểm (\(containerManager.quarantinedFiles.count))",
+                systemImage: "lock.rectangle.stack.fill",
+                subtitle: "Các tệp đáng ngờ đã bị cô lập khỏi container ứng dụng"
+            )
+
+            if containerManager.quarantinedFiles.isEmpty {
+                Text("Kho cách ly đang trống.")
+                    .font(.system(size: 12))
+                    .foregroundColor(CyberTheme.textSecondary)
+            } else {
+                ForEach(containerManager.quarantinedFiles.prefix(15)) { rec in
+                    HStack(alignment: .center, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(rec.fileName) • \(rec.bundleIdentifier)")
+                                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                                .foregroundColor(CyberTheme.amber)
+                            Text("\(rec.kind.rawValue) • \(CyberTheme.formatBytes(rec.sizeBytes))")
+                                .font(.system(size: 11))
+                                .foregroundColor(CyberTheme.textSecondary)
+                            Text("SHA-256: \(rec.sha256.prefix(16))... • \(CyberTheme.formatTimestamp(rec.quarantinedAt))")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(CyberTheme.textMuted)
+                        }
+                        Spacer()
+                        Button("Xóa hẳn") {
+                            do {
+                                try containerManager.deleteQuarantinedRecord(rec)
+                            } catch {
+                                alertMessage = "Lỗi xóa tệp cách ly: \(error.localizedDescription)"
+                            }
+                        }
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(CyberTheme.crimson)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    }
+                    .padding(10)
+                    .background(CyberTheme.elevatedSurface)
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
         }
@@ -501,7 +664,7 @@ private struct InstalledAppPickerSheet: View {
                 if isLoading {
                     HStack {
                         ProgressView()
-                        Text("Đang truy vấn SpringBoardServices / LSApplicationWorkspace...")
+                        Text("Đang truy vấn danh sách ứng dụng hệ thống...")
                             .font(.system(size: 12))
                     }
                 }
