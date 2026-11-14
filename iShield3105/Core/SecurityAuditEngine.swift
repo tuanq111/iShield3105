@@ -14,7 +14,7 @@ final class SecurityAuditEngine: ObservableObject {
     @Published private(set) var lastReport: SecurityAuditReport?
     @Published private(set) var isScanning = false
 
-    private static let suspiciousDylibKeywords: [String] = [
+    nonisolated private static let suspiciousDylibKeywords: [String] = [
         "frida", "fridagadget", "substrate", "mobilesubstrate", "cynject",
         "ellekit", "libhooker", "substitute", "shadow", "fishhook", "cycript",
         "reveal", "flex", "ssl-kill", "sslkillswitch", "objection", "dobby",
@@ -22,21 +22,21 @@ final class SecurityAuditEngine: ObservableObject {
         "bypass", "hooker", "antidebug"
     ]
 
-    private static let systemTrustedPrefixes: [String] = [
+    nonisolated private static let systemTrustedPrefixes: [String] = [
         "/System/Library/",
         "/usr/lib/",
         "/System/Cryptexes/",
         "/Developer/"
     ]
 
-    private static let knownMitMCAKeywords: [String] = [
+    nonisolated private static let knownMitMCAKeywords: [String] = [
         "charles", "mitmproxy", "fiddler", "portswigger", "burp",
         "proxyman", "surge", "quantumult", "shadowrocket", "reqable",
         "thor", "stream", "zscaler", "netskope", "fortinet", "palo alto",
         "bluecoat", "ssl inspection", "intercept", "debug ca"
     ]
 
-    private static let dangerousPortsCatalog: [(port: UInt16, service: String, desc: String, severity: RiskSeverity)] = [
+    nonisolated private static let dangerousPortsCatalog: [(port: UInt16, service: String, desc: String, severity: RiskSeverity)] = [
         (22, "SSH / Dropbear", "Cổng truy cập shell từ xa (Remote Shell / SSH)", .critical),
         (27042, "Frida Server", "Cổng mặc định của công cụ hook/gián điệp runtime Frida", .critical),
         (27043, "Frida Secondary", "Cổng phụ của Frida Server", .critical),
@@ -91,7 +91,7 @@ final class SecurityAuditEngine: ObservableObject {
     // MARK: - 1. MDM & Supervision Detector
 
     nonisolated private static func inspectMDMAndSupervision() async -> ([MDMProfileIndicator], Bool, Bool) {
-        let bridge = ISContainerBridge.sharedBridge()
+        let bridge = ISContainerBridge.shared()
         let fm = FileManager.default
         var indicators: [MDMProfileIndicator] = []
         var supervisedDetected = false
@@ -421,7 +421,7 @@ final class SecurityAuditEngine: ObservableObject {
     // MARK: - 3. Runtime Dylib Injection & Debugger Detection
 
     nonisolated private static func inspectLoadedDylibsAndDebugger() async -> ([LoadedDylibReport], [LoadedDylibReport], Bool) {
-        let bridge = ISContainerBridge.sharedBridge()
+        let bridge = ISContainerBridge.shared()
         let rawEntries = bridge.loadedDynamicLibraries()
         let bundlePath = Bundle.main.bundlePath
         let debuggerAttached = bridge.isDebuggerAttached()
@@ -475,7 +475,7 @@ final class SecurityAuditEngine: ObservableObject {
     // MARK: - 4. Loopback Backdoor Port Scanner (127.0.0.1)
 
     nonisolated private static func scanDangerousLoopbackPorts() async -> [LocalPortProbeResult] {
-        let bridge = ISContainerBridge.sharedBridge()
+        let bridge = ISContainerBridge.shared()
         var results: [LocalPortProbeResult] = []
         for item in dangerousPortsCatalog {
             let isOpen = bridge.isLocalhostPortOpen(item.port, timeoutMilliseconds: 220)

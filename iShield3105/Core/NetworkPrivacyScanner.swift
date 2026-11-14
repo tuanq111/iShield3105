@@ -10,12 +10,25 @@ import Darwin
 import Network
 import CFNetwork
 
+private final class NWPathContinuationGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var finished = false
+
+    func tryComplete() -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !finished else { return false }
+        finished = true
+        return true
+    }
+}
+
 @MainActor
 final class NetworkPrivacyScanner: ObservableObject {
     @Published private(set) var lastReport: NetworkPrivacyReport?
     @Published private(set) var isScanning = false
 
-    private static let trustedDNSDirectory: [String: String] = [
+    nonisolated private static let trustedDNSDirectory: [String: String] = [
         "1.1.1.1": "Cloudflare DNS",
         "1.0.0.1": "Cloudflare DNS",
         "1.1.1.2": "Cloudflare Malware Block",
@@ -38,7 +51,7 @@ final class NetworkPrivacyScanner: ObservableObject {
         "208.67.220.220": "OpenDNS / Cisco"
     ]
 
-    private static let hostingOrVPNKeywords: [String] = [
+    nonisolated private static let hostingOrVPNKeywords: [String] = [
         "cloudflare", "mullvad", "proton", "nordvpn", "expressvpn", "surfshark",
         "m247", "datacamp", "digitalocean", "linode", "akamai", "hetzner",
         "ovh", "vultr", "amazon", "aws", "google cloud", "oracle", "azure",
@@ -59,7 +72,7 @@ final class NetworkPrivacyScanner: ObservableObject {
             let activeTunnels = interfaces.filter { $0.category == .virtualTunnel && $0.isUp && $0.isRunning }
             let suspiciousTunnels = activeTunnels.filter(\.isSuspiciousHiddenTunnel)
 
-            let dnsSnap = ISContainerBridge.sharedBridge().fetchSystemDNSServers()
+            let dnsSnap = ISContainerBridge.shared().fetchSystemDNSServers()
             let auditedDNS = Self.auditDNSServers(dnsSnap.servers)
             let hijackSuspected = auditedDNS.contains { $0.riskLevel >= .warning }
 
@@ -233,17 +246,10 @@ final class NetworkPrivacyScanner: ObservableObject {
         await withCheckedContinuation { continuation in
             let monitor = NWPathMonitor()
             let queue = DispatchQueue(label: "com.ishield3105.nwpath")
-            let lock = NSLock()
-            var finished = false
+            let gate = NWPathContinuationGate()
 
             monitor.pathUpdateHandler = { path in
-                lock.lock()
-                guard !finished else {
-                    lock.unlock()
-                    return
-                }
-                finished = true
-                lock.unlock()
+                guard gate.tryComplete() else { return }
                 monitor.cancel()
 
                 var parts: [String] = []
@@ -270,13 +276,7 @@ final class NetworkPrivacyScanner: ObservableObject {
             monitor.start(queue: queue)
 
             queue.asyncAfter(deadline: .now() + 1.0) {
-                lock.lock()
-                guard !finished else {
-                    lock.unlock()
-                    return
-                }
-                finished = true
-                lock.unlock()
+                guard gate.tryComplete() else { return }
                 monitor.cancel()
                 continuation.resume(returning: (false, "Hết thời gian chờ NWPathMonitor"))
             }

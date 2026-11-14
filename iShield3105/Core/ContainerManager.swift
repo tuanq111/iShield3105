@@ -19,25 +19,25 @@ final class ContainerManager: ObservableObject {
     @Published private(set) var isInspecting = false
     @Published private(set) var statusMessage: String?
 
-    private let bridge = ISContainerBridge.sharedBridge()
+    private let bridge = ISContainerBridge.shared()
     private let fileManager = FileManager.default
 
-    private static let bloatedSingleFileThresholdBytes: Int64 = 50 * 1024 * 1024 // 50 MB
-    private static let suspiciousBinaryExtensions: Set<String> = [
+    nonisolated private static let bloatedSingleFileThresholdBytes: Int64 = 50 * 1024 * 1024 // 50 MB
+    nonisolated private static let suspiciousBinaryExtensions: Set<String> = [
         "dylib", "deb", "so", "framework", "bundle", "tweak"
     ]
-    private static let proxyConfigNameKeywords: [String] = [
+    nonisolated private static let proxyConfigNameKeywords: [String] = [
         "proxy", "mitm", "shadowsocks", "clash", "mihomo", "v2ray", "xray",
         "trojan", "surge", "quantumult", "sing-box", "singbox", "pac", "tunnel"
     ]
-    private static let trackingKeyKeywords: [String] = [
+    nonisolated private static let trackingKeyKeywords: [String] = [
         "proxy", "httpproxy", "httpsproxy", "socksproxy", "pacurl",
         "adjust", "appsflyer", "branch", "amplitude", "mixpanel", "sensorsdata",
         "umeng", "bugly", "bytedance", "pangle", "idfa", "advertisingid",
         "fingerprint", "device_fingerprint", "tracking", "telemetry", "keylog",
         "clipboard", "exfiltrate", "beacon", "spy", "hook", "c2", "frida"
     ]
-    private static let trackingPlistNameKeywords: [String] = [
+    nonisolated private static let trackingPlistNameKeywords: [String] = [
         "adjust", "appsflyer", "branch", "amplitude", "mixpanel", "sensors",
         "umeng", "bugly", "facebook", "fb_", "tiktok", "bytedance", "analytics",
         "tracking", "telemetry", "proxy"
@@ -58,7 +58,7 @@ final class ContainerManager: ObservableObject {
         frameworkStatus = status
 
         let loaded: [InstalledAppItem] = await Task.detached(priority: .userInitiated) {
-            let rawApps = (try? ISContainerBridge.sharedBridge().installedApplications()) ?? []
+            let rawApps = (try? ISContainerBridge.shared().installedApplications()) ?? []
             return rawApps.map { desc in
                 InstalledAppItem(
                     bundleIdentifier: desc.bundleIdentifier,
@@ -94,7 +94,7 @@ final class ContainerManager: ObservableObject {
         let knownApp = installedApps.first(where: { $0.bundleIdentifier == trimmedID })
 
         let report: ContainerInspectionReport = await Task.detached(priority: .userInitiated) {
-            let bridge = ISContainerBridge.sharedBridge()
+            let bridge = ISContainerBridge.shared()
             let fm = FileManager.default
 
             let dataDesc = bridge.resolveAppDataContainer(forBundleIdentifier: trimmedID)
