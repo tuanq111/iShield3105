@@ -1,0 +1,17 @@
+# Xcode generated project & build outputs
+*.xcodeproj
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+build/
+DerivedData/
+Payload/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# User & macOS metadata
+xcuserdata/
+*.xcuserstate
+.DS_Store
+*.swp
+*~
