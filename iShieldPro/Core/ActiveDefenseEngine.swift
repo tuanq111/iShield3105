@@ -287,7 +287,7 @@ final class ActiveDefenseEngine: ObservableObject {
         let bluetoothConnected = activeInputs.contains(where: \.isBluetooth)
             || availableInputs.contains(where: \.isBluetooth)
 
-        let callState = callObserverBridge?.snapshot() ?? (false, "Chưa khởi tạo CallKit")
+        let callState = callObserverBridge?.snapshot() ?? (hasActiveCall: false, summary: "Chưa khởi tạo CallKit")
         let perm = Self.currentMicPermissionLabel()
 
         var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInWideAngleCamera, .builtInUltraWideCamera]
@@ -592,13 +592,14 @@ final class ActiveDefenseEngine: ObservableObject {
             ])
         }
 
+        let nullSentinel = NSNull()
         var destProps: [CFString: Any] = [
             kCGImageDestinationLossyCompressionQuality: 0.92,
-            kCGImagePropertyGPSDictionary: kCFNull,
-            kCGImagePropertyExifDictionary: kCFNull,
-            kCGImagePropertyTIFFDictionary: kCFNull,
-            kCGImagePropertyIPTCDictionary: kCFNull,
-            "{MakerApple}" as CFString: kCFNull
+            kCGImagePropertyGPSDictionary: nullSentinel,
+            kCGImagePropertyExifDictionary: nullSentinel,
+            kCGImagePropertyTIFFDictionary: nullSentinel,
+            kCGImagePropertyIPTCDictionary: nullSentinel,
+            "{MakerApple}" as CFString: nullSentinel
         ]
         if let orientation = props[kCGImagePropertyOrientation] {
             destProps[kCGImagePropertyOrientation] = orientation
